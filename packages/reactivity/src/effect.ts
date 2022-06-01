@@ -91,8 +91,10 @@ function createReactiveEffect<T = any>(
         enableTracking()
         effectStack.push(effect)
         activeEffect = effect
+        console.log(`%cexec effect ${effect.raw.name} ${effect.id} fn`, `${effect.raw.name === 'componentEffect' ? 'color: yellow' : 'color: #ffbf00'}`)
         return fn()
       } finally {
+        console.log(`%ceffect ${effect.raw.name} ${effect.id} finally`, `${effect.raw.name === 'componentEffect' ? 'color: yellow' : 'color: #ffbf00'}`)
         effectStack.pop()
         resetTracking()
         activeEffect = effectStack[effectStack.length - 1]
@@ -110,6 +112,7 @@ function createReactiveEffect<T = any>(
 
 function cleanup(effect: ReactiveEffect) {
   const { deps } = effect
+  console.log('exec cleanup fn')
   if (deps.length) {
     for (let i = 0; i < deps.length; i++) {
       deps[i].delete(effect)
@@ -148,8 +151,21 @@ export function track(target: object, type: TrackOpTypes, key: unknown) {
   if (!dep) {
     depsMap.set(key, (dep = new Set()))
   }
+  // console.log('track')
+  // console.log({
+  //   target,
+  //   type,
+  //   key
+  // })
+  // console.log("!dep.has(activeEffect):" + !dep.has(activeEffect))
+  // console.log("activeEffect.id:" + activeEffect.id)
+
+  // 1. 动态绑定变量会新建一个 ref 实例和当前组件的 effect 绑定, 如果已经绑定则忽略
+  // 2. 在重新执行 effect 之前会清理 dep 和 effect 之间的关系
+  // 3. 属性动态传递给子组件并被视图引用，父组件有触发子组件 effect 渲染的能力。所以此处的子组件渲染触发不是来自属性的 trigger
   if (!dep.has(activeEffect)) {
     dep.add(activeEffect)
+    // console.log(depsMap)
     activeEffect.deps.push(dep)
     if (__DEV__ && activeEffect.options.onTrack) {
       activeEffect.options.onTrack({
@@ -162,6 +178,21 @@ export function track(target: object, type: TrackOpTypes, key: unknown) {
   }
 }
 
+
+// vue.global.js:9010 You are running a development build of Vue.
+// Make sure to use the production build (*.prod.js) when deploying for production.
+// 09:41:11.943 vue.global.js:480 trigger
+// 09:41:11.943 vue.global.js:481 {target: RefImpl, type: 'set', key: 'value', newValue: 2}
+// 09:41:11.943 vue.global.js:516 Map(1) {'value' => Set(1)}
+// 09:41:11.944 vue.global.js:568 ready to run effects:
+// 09:41:11.944 vue.global.js:569 Set(1) {ƒ}
+// 09:41:11.945 vue.global.js:480 trigger
+// 09:41:11.945 vue.global.js:481 {target: {…}, type: 'set', key: 'aa', newValue: 2}
+// 09:41:11.945 vue.global.js:516 Map(1) {'aa' => Set(0)}
+// 09:41:11.945 vue.global.js:568 ready to run effects:
+// 09:41:11.945 vue.global.js:569 Set(0) {size: 0}
+// 09:41:11.945 vue.global.js:480 trigger
+// 09:41:11.946 vue.global.js:481 {target: {…}, type: 'set', key: '$attrs', newValue: undefined}
 export function trigger(
   target: object,
   type: TriggerOpTypes,
@@ -170,6 +201,15 @@ export function trigger(
   oldValue?: unknown,
   oldTarget?: Map<unknown, unknown> | Set<unknown>
 ) {
+
+  console.log('trigger')
+  console.log({
+    target,
+    type,
+    key,
+    newValue
+  })
+
   const depsMap = targetMap.get(target)
   if (!depsMap) {
     // never been tracked
@@ -199,6 +239,8 @@ export function trigger(
     })
   } else {
     // schedule runs for SET | ADD | DELETE
+
+    // console.log(depsMap)
     if (key !== void 0) {
       add(depsMap.get(key))
     }
@@ -251,5 +293,7 @@ export function trigger(
     }
   }
 
+  console.log("ready to run effects:")
+  console.log(effects)
   effects.forEach(run)
 }

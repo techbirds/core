@@ -60,8 +60,20 @@ export function queueJob(job: SchedulerJob) {
   // if the job is a watch() callback, the search will start with a +1 index to
   // allow it recursively trigger itself - it is the user's responsibility to
   // ensure it doesn't end up in an infinite loop.
+
+  let status = (!queue.length ||
+    // 用例: 
+    // 1. 同步对a、b 属性更新或者对 a 属性同步更新多次，会比较当前组件实例的 effect 是否已在队列里。
+    !queue.includes(
+      job,
+      isFlushing && job.allowRecurse ? flushIndex + 1 : flushIndex
+    )) &&
+    job !== currentPreFlushParentJob
+  console.log(`queue push ${job ?.raw ?.name} ${job.id} ${status ? "success" : "failed"}`)
   if (
     (!queue.length ||
+      // 用例: 
+      // 1. 同步对a、b 属性更新或者对 a 属性同步更新多次，会比较当前组件实例的 effect 是否已在队列里。
       !queue.includes(
         job,
         isFlushing && job.allowRecurse ? flushIndex + 1 : flushIndex
@@ -74,6 +86,8 @@ export function queueJob(job: SchedulerJob) {
 }
 
 function queueFlush() {
+  let status = !isFlushing && !isFlushPending
+  console.log("%cqueue flush " + (status ? "success" : "failed"), "color: #00bfff; font-size: 30px")
   if (!isFlushing && !isFlushPending) {
     isFlushPending = true
     currentFlushPromise = resolvedPromise.then(flushJobs)
@@ -93,6 +107,7 @@ function queueCb(
   pendingQueue: SchedulerCb[],
   index: number
 ) {
+  console.log("exec queueCb fn")
   if (!isArray(cb)) {
     if (
       !activeQueue ||
@@ -101,12 +116,14 @@ function queueCb(
         (cb as SchedulerJob).allowRecurse ? index + 1 : index
       )
     ) {
+      console.log("pendingQueue push success")
       pendingQueue.push(cb)
     }
   } else {
     // if cb is an array, it is a component lifecycle hook which can only be
     // triggered by a job, which is already deduped in the main queue, so
     // we can skip duplicate check here to improve perf
+    console.log("pendingQueue push success")
     pendingQueue.push(...cb)
   }
   queueFlush()
@@ -124,6 +141,7 @@ export function flushPreFlushCbs(
   seen?: CountMap,
   parentJob: SchedulerJob | null = null
 ) {
+  console.log("exec flushPreFlushCbs fn")
   if (pendingPreFlushCbs.length) {
     currentPreFlushParentJob = parentJob
     activePreFlushCbs = [...new Set(pendingPreFlushCbs)]
@@ -131,6 +149,7 @@ export function flushPreFlushCbs(
     if (__DEV__) {
       seen = seen || new Map()
     }
+    console.log("%cloop exec flushPreFlushCbs start", 'color: green')
     for (
       preFlushIndex = 0;
       preFlushIndex < activePreFlushCbs.length;
@@ -141,10 +160,12 @@ export function flushPreFlushCbs(
       }
       activePreFlushCbs[preFlushIndex]()
     }
+    console.log("%cloop exec flushPreFlushCbs end", 'color: green')
     activePreFlushCbs = null
     preFlushIndex = 0
     currentPreFlushParentJob = null
     // recursively flush until it drains
+    console.log("recursively exec flushPreFlushCbs fn")
     flushPreFlushCbs(seen, parentJob)
   }
 }
@@ -186,6 +207,7 @@ const getId = (job: SchedulerJob | SchedulerCb) =>
   job.id == null ? Infinity : job.id
 
 function flushJobs(seen?: CountMap) {
+  console.log("exec flushJobs fn")
   isFlushPending = false
   isFlushing = true
   if (__DEV__) {
@@ -239,10 +261,10 @@ function checkRecursiveUpdates(seen: CountMap, fn: SchedulerJob | SchedulerCb) {
     if (count > RECURSION_LIMIT) {
       throw new Error(
         `Maximum recursive updates exceeded. ` +
-          `This means you have a reactive effect that is mutating its own ` +
-          `dependencies and thus recursively triggering itself. Possible sources ` +
-          `include component template, render function, updated hook or ` +
-          `watcher source function.`
+        `This means you have a reactive effect that is mutating its own ` +
+        `dependencies and thus recursively triggering itself. Possible sources ` +
+        `include component template, render function, updated hook or ` +
+        `watcher source function.`
       )
     } else {
       seen.set(fn, count + 1)
